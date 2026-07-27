@@ -2,6 +2,7 @@ package com.example.wallet_service.controller;
 
 import com.example.wallet_service.dto.DepositRequest;
 import com.example.wallet_service.dto.TransferRequest;
+import com.example.wallet_service.dto.WithdrawRequest;
 import com.example.wallet_service.entity.Transaction;
 import com.example.wallet_service.entity.Wallet;
 import com.example.wallet_service.service.WalletService;
@@ -50,4 +51,12 @@ public class WalletController {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
         return ResponseEntity.ok(walletService.getHistory(email));
     }
+
+    @PostMapping("/withdraw")
+    public ResponseEntity<Wallet> withdraw(@RequestBody WithdrawRequest request) {
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        Wallet wallet = walletService.withdraw(email, request.getAmount());
+        return ResponseEntity.ok(wallet);
+    }
+
 }

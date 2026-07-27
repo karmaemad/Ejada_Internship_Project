@@ -108,4 +108,34 @@ public class WalletService {
                 .orElseThrow(() -> new RuntimeException("Wallet not found"));
         return transactionRepository.findByWalletIdOrderByTimestampDesc(wallet.getId());
     }
+
+
+    @Transactional
+    public Wallet withdraw(String email, BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("Withdraw amount must be positive");
+        }
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        Wallet wallet = walletRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new RuntimeException("Wallet not found"));
+
+        if (wallet.getBalance().compareTo(amount) < 0) {
+            throw new RuntimeException("Insufficient balance");
+        }
+
+        wallet.setBalance(wallet.getBalance().subtract(amount));
+        Wallet savedWallet = walletRepository.save(wallet);
+
+        Transaction tx = new Transaction();
+        tx.setType(TransactionType.WITHDRAW);
+        tx.setAmount(amount);
+        tx.setWallet(savedWallet);
+        tx.setCounterpartyEmail(null);
+        tx.setTimestamp(LocalDateTime.now());
+        transactionRepository.save(tx);
+
+        return savedWallet;
+    }
 }
