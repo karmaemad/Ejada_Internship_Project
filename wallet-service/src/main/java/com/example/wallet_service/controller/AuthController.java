@@ -3,6 +3,7 @@ package com.example.wallet_service.controller;
 import com.example.wallet_service.dto.AuthResponse;
 import com.example.wallet_service.dto.LoginRequest;
 import com.example.wallet_service.dto.RegisterRequest;
+import com.example.wallet_service.dto.UserResponse;
 import com.example.wallet_service.entity.User;
 import com.example.wallet_service.service.AuthService;
 import lombok.RequiredArgsConstructor;
@@ -17,9 +18,12 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/register")
-    public ResponseEntity<User> register(@RequestBody RegisterRequest request) {
+    public ResponseEntity<UserResponse> register(@RequestBody RegisterRequest request) {
         User user = authService.register(request);
-        return ResponseEntity.ok(user);
+        UserResponse response = new UserResponse(
+                user.getId(), user.getFirstName(), user.getLastName(), user.getEmail()
+        );
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/login")
