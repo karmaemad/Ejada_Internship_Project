@@ -8,6 +8,7 @@ import com.example.shop_service.entity.*;
 import com.example.shop_service.repository.CartRepository;
 import com.example.shop_service.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cloud.client.circuitbreaker.CircuitBreakerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +24,7 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final InventoryClient inventoryClient;
     private final WalletClient walletClient;
+    private final CircuitBreakerFactory circuitBreakerFactory;
 
     @Transactional
     public Order checkout(String userEmail) {
@@ -33,9 +35,16 @@ public class OrderService {
             throw new RuntimeException("Cart is empty");
         }
 
-        // Step 1: verify stock for every item
+        var breaker = circuitBreakerFactory.create("inventoryService");
+
+        // Step 1: verify stock for every item, through the circuit breaker
         for (CartItem cartItem : cart.getItems()) {
-            Boolean inStock = inventoryClient.isInStock(cartItem.getProductId(), cartItem.getQuantity());
+            Boolean inStock = breaker.run(
+                    () -> inventoryClient.isInStock(cartItem.getProductId(), cartItem.getQuantity()),
+                    throwable -> {
+                        throw new RuntimeException("Inventory service unavailable, please try again later");
+                    }
+            );
             if (inStock == null || !inStock) {
                 throw new RuntimeException("Insufficient stock for product: " + cartItem.getProductName());
             }
@@ -48,7 +57,7 @@ public class OrderService {
             total = total.add(lineTotal);
         }
 
-        // Step 3: check wallet balance is sufficient BEFORE creating the order
+        // Step 3: check wallet balance
         BigDecimal balance = walletClient.getBalance();
         if (balance.compareTo(total) < 0) {
             throw new RuntimeException("Insufficient wallet balance");
@@ -70,21 +79,31 @@ public class OrderService {
             order.getItems().add(orderItem);
         }
 
-        // Step 5: attempt the actual wallet charge
+        // Step 5: attempt payment
         try {
             walletClient.withdraw(new WithdrawRequest(total));
             order.setStatus(OrderStatus.PAID);
         } catch (Exception e) {
             order.setStatus(OrderStatus.FAILED);
-            Order failedOrder = orderRepository.save(order);
+            orderRepository.save(order);
             throw new RuntimeException("Payment failed: " + e.getMessage());
         }
 
         Order savedOrder = orderRepository.save(order);
 
-        // Step 6: decrease stock now that payment succeeded
+        // Step 6: decrease stock, through the circuit breaker
         for (CartItem cartItem : cart.getItems()) {
-            inventoryClient.decreaseStock(cartItem.getProductId(), new StockUpdateRequest(cartItem.getQuantity()));
+            breaker.run(
+                    () -> {
+                        inventoryClient.decreaseStock(cartItem.getProductId(), new StockUpdateRequest(cartItem.getQuantity()));
+                        return null;
+                    },
+                    throwable -> {
+                        // Order is already paid at this point — log this for manual reconciliation rather than failing the whole checkout
+                        System.out.println("WARNING: stock decrease failed for product " + cartItem.getProductId() + " after payment succeeded: " + throwable.getMessage());
+                        return null;
+                    }
+            );
         }
 
         // Step 7: clear the cart
