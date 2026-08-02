@@ -26,6 +26,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/products/**").authenticated()
                 .requestMatchers(HttpMethod.POST, "/products/*/decrease-stock").authenticated()
                 .requestMatchers("/products/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.GET, "/products/**").authenticated()
+                .requestMatchers(HttpMethod.POST, "/products/*/decrease-stock", "/products/*/reviews").authenticated()
+                .requestMatchers("/products/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

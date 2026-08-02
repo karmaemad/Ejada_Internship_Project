@@ -1,6 +1,7 @@
 package com.example.inventory_service.service;
 
 import com.example.inventory_service.dto.ProductRequest;
+import com.example.inventory_service.entity.Category;
 import com.example.inventory_service.entity.Product;
 import com.example.inventory_service.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +20,27 @@ public class ProductService {
         product.setName(request.getName());
         product.setDescription(request.getDescription());
         product.setPrice(request.getPrice());
+        product.setOriginalPrice(request.getOriginalPrice());
         product.setStockQuantity(request.getStockQuantity());
+        product.setCategory(request.getCategory());
+        product.setImageUrl(request.getImageUrl());
+        product.setIsNew(request.getIsNew() != null ? request.getIsNew() : false);
+
+        return productRepository.save(product);
+    }
+
+    public Product updateProduct(Long id, ProductRequest request) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+
+        product.setName(request.getName());
+        product.setDescription(request.getDescription());
+        product.setPrice(request.getPrice());
+        product.setOriginalPrice(request.getOriginalPrice());
+        product.setStockQuantity(request.getStockQuantity());
+        product.setCategory(request.getCategory());
+        product.setImageUrl(request.getImageUrl());
+        product.setIsNew(request.getIsNew() != null ? request.getIsNew() : product.getIsNew());
 
         return productRepository.save(product);
     }
@@ -58,17 +79,8 @@ public class ProductService {
         }
 
         product.setStockQuantity(product.getStockQuantity() - quantity);
-        return productRepository.save(product);
-    }
-    
-    public Product updateProduct(Long id, ProductRequest request) {
-        Product product = productRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
 
-        product.setName(request.getName());
-        product.setDescription(request.getDescription());
-        product.setPrice(request.getPrice());
-        product.setStockQuantity(request.getStockQuantity());
+        product.setSalesCount(product.getSalesCount() + quantity);
 
         return productRepository.save(product);
     }
@@ -86,4 +98,13 @@ public class ProductService {
 
         return product.getStockQuantity() >= requestedQuantity;
     }
+
+    public List<Product> getProductsByCategory(Category category) {
+        return productRepository.findByCategory(category);
+    }
+
+    public List<Product> getBestSelling() {
+        return productRepository.findTop10ByOrderBySalesCountDesc();
+    }
 }
+

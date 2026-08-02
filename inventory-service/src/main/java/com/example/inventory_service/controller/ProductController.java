@@ -2,6 +2,7 @@ package com.example.inventory_service.controller;
 
 import com.example.inventory_service.dto.ProductRequest;
 import com.example.inventory_service.dto.StockUpdateRequest;
+import com.example.inventory_service.entity.Category;
 import com.example.inventory_service.entity.Product;
 import com.example.inventory_service.service.ProductService;
 import lombok.RequiredArgsConstructor;
@@ -60,6 +61,16 @@ public class ProductController {
     @GetMapping("/{id}/in-stock")
     public ResponseEntity<Boolean> isInStock(@PathVariable Long id, @RequestParam Integer quantity) {
         return ResponseEntity.ok(productService.isInStock(id, quantity));
+    }
+
+    @GetMapping("/category/{category}")
+    public ResponseEntity<List<Product>> getByCategory(@PathVariable Category category) {
+        return ResponseEntity.ok(productService.getProductsByCategory(category));
+    }
+
+    @GetMapping("/best-selling")
+    public ResponseEntity<List<Product>> getBestSelling() {
+        return ResponseEntity.ok(productService.getBestSelling());
     }
 
 }

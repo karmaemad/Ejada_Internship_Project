@@ -24,6 +24,20 @@ public class Product {
     @Column(nullable = false)
     private BigDecimal price;
 
+    private BigDecimal originalPrice;
+
     @Column(nullable = false)
     private Integer stockQuantity;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Category category;
+
+    private String imageUrl;
+
+    @Column(nullable = false)
+    private Boolean isNew = false;
+
+    @Column(nullable = false)
+    private Integer salesCount = 0;
 }
