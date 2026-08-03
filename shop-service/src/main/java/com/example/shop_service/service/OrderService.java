@@ -11,6 +11,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.cloud.client.circuitbreaker.CircuitBreakerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -28,6 +30,7 @@ public class OrderService {
 
     @Transactional
     public Order checkout(String userEmail) {
+
         Cart cart = cartRepository.findByUserEmail(userEmail)
                 .orElseThrow(() -> new RuntimeException("Cart not found"));
 
@@ -35,78 +38,115 @@ public class OrderService {
             throw new RuntimeException("Cart is empty");
         }
 
+        // Capture the Authorization header from the incoming request
+        String authHeader = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes())
+                .getRequest()
+                .getHeader("Authorization");
+
         var breaker = circuitBreakerFactory.create("inventoryService");
 
-        // Step 1: verify stock for every item, through the circuit breaker
+        // Step 1: Verify stock
         for (CartItem cartItem : cart.getItems()) {
+
             Boolean inStock = breaker.run(
-                    () -> inventoryClient.isInStock(cartItem.getProductId(), cartItem.getQuantity()),
+                    () -> inventoryClient.isInStock(
+                            cartItem.getProductId(),
+                            cartItem.getQuantity(),
+                            authHeader
+                    ),
                     throwable -> {
+                        System.out.println("INVENTORY CALL FAILED: "
+                                + throwable.getClass().getSimpleName()
+                                + " - "
+                                + throwable.getMessage());
+
                         throw new RuntimeException("Inventory service unavailable, please try again later");
                     }
             );
+
             if (inStock == null || !inStock) {
-                throw new RuntimeException("Insufficient stock for product: " + cartItem.getProductName());
+                throw new RuntimeException(
+                        "Insufficient stock for product: " + cartItem.getProductName()
+                );
             }
         }
 
-        // Step 2: calculate total
+        // Step 2: Calculate total
         BigDecimal total = BigDecimal.ZERO;
+
         for (CartItem cartItem : cart.getItems()) {
-            BigDecimal lineTotal = cartItem.getUnitPrice().multiply(BigDecimal.valueOf(cartItem.getQuantity()));
+            BigDecimal lineTotal = cartItem.getUnitPrice()
+                    .multiply(BigDecimal.valueOf(cartItem.getQuantity()));
+
             total = total.add(lineTotal);
         }
 
-        // Step 3: check wallet balance
+        // Step 3: Check wallet balance
         BigDecimal balance = walletClient.getBalance();
+
         if (balance.compareTo(total) < 0) {
             throw new RuntimeException("Insufficient wallet balance");
         }
 
-        // Step 4: build the order
+        // Step 4: Build order
         Order order = new Order();
         order.setUserEmail(userEmail);
         order.setCreatedAt(LocalDateTime.now());
         order.setTotalAmount(total);
 
         for (CartItem cartItem : cart.getItems()) {
+
             OrderItem orderItem = new OrderItem();
+
             orderItem.setProductId(cartItem.getProductId());
             orderItem.setProductName(cartItem.getProductName());
             orderItem.setUnitPrice(cartItem.getUnitPrice());
             orderItem.setQuantity(cartItem.getQuantity());
             orderItem.setOrder(order);
+
             order.getItems().add(orderItem);
         }
 
-        // Step 5: attempt payment
+        // Step 5: Withdraw from wallet
         try {
             walletClient.withdraw(new WithdrawRequest(total));
             order.setStatus(OrderStatus.PAID);
+
         } catch (Exception e) {
+
             order.setStatus(OrderStatus.FAILED);
             orderRepository.save(order);
+
             throw new RuntimeException("Payment failed: " + e.getMessage());
         }
 
         Order savedOrder = orderRepository.save(order);
 
-        // Step 6: decrease stock, through the circuit breaker
+        // Step 6: Decrease stock
         for (CartItem cartItem : cart.getItems()) {
+
             breaker.run(
                     () -> {
-                        inventoryClient.decreaseStock(cartItem.getProductId(), new StockUpdateRequest(cartItem.getQuantity()));
+                        inventoryClient.decreaseStock(
+                                cartItem.getProductId(),
+                                new StockUpdateRequest(cartItem.getQuantity()),
+                                authHeader
+                        );
                         return null;
                     },
                     throwable -> {
-                        // Order is already paid at this point — log this for manual reconciliation rather than failing the whole checkout
-                        System.out.println("WARNING: stock decrease failed for product " + cartItem.getProductId() + " after payment succeeded: " + throwable.getMessage());
+                        System.out.println(
+                                "WARNING: stock decrease failed for product "
+                                        + cartItem.getProductId()
+                                        + " after payment succeeded: "
+                                        + throwable.getMessage()
+                        );
                         return null;
                     }
             );
         }
 
-        // Step 7: clear the cart
+        // Step 7: Clear cart
         cart.getItems().clear();
         cartRepository.save(cart);
 

@@ -23,9 +23,7 @@ public class SecurityConfig {
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/products/**").authenticated()
-                .requestMatchers(HttpMethod.POST, "/products/*/decrease-stock").authenticated()
-                .requestMatchers("/products/**").hasRole("ADMIN")
+                .requestMatchers("/images/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/products/**").authenticated()
                 .requestMatchers(HttpMethod.POST, "/products/*/decrease-stock", "/products/*/reviews").authenticated()
                 .requestMatchers("/products/**").hasRole("ADMIN")
